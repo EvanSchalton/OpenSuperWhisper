@@ -56,6 +56,18 @@ final class MediaPlaybackController {
         } else {
             getIsPlaying = nil
         }
+
+        // CRITICAL: prime the now-playing connection. Without registering, the IsPlaying probe
+        // reports not-playing for browser media (a Chrome/YouTube tab) even when it's clearly
+        // playing — so the resume was never armed and media never restarted. Registering makes
+        // the probe accurate (verified: reports IsPlaying=true, rate=1 for a playing Chrome tab).
+        if let bundle,
+           let regPtr = CFBundleGetFunctionPointerForName(
+            bundle, "MRMediaRemoteRegisterForNowPlayingNotifications" as CFString) {
+            typealias RegisterFn = @convention(c) (DispatchQueue) -> Void
+            unsafeBitCast(regPtr, to: RegisterFn.self)(DispatchQueue.main)
+        }
+
         // No read API → assume playing so we still pause+resume (#126 fallback) rather than nothing.
         isNowPlaying = (getIsPlaying == nil)
         startPolling()
