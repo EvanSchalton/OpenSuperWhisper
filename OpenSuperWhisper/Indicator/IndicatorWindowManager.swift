@@ -48,9 +48,10 @@ class IndicatorWindowManager: IndicatorViewDelegate {
             panel.backgroundColor = .clear
             panel.isOpaque = false
             panel.hasShadow = false
-            // Fully click-through, matching the my-monkeys baseline: the indicator never
-            // intercepts clicks meant for the app underneath. (Opt-in on-bubble Stop/Cancel
-            // buttons will flip this per-recording when those are added.)
+            // Fully click-through by default, matching the my-monkeys baseline: the
+            // indicator never intercepts clicks meant for the app underneath. When the
+            // opt-in on-bubble Stop/Cancel buttons are enabled, this is flipped per
+            // show() below so they're tappable.
             panel.ignoresMouseEvents = true
             panel.hidesOnDeactivate = false
             // Belt-and-suspenders: the window is sized manually + non-animated via

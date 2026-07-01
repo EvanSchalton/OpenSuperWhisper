@@ -13,8 +13,15 @@ import Foundation
 final class MediaPlaybackController {
     static let shared = MediaPlaybackController()
 
-    /// Whether we sent a pause this cycle, so `resumeMedia` only acts after `pauseMedia`.
+    /// Whether we sent a pause this cycle, so `resumeMedia` only plays what we
+    /// paused. Touched only on the main queue (see pause/resume) — no data race.
     private(set) var didPauseMedia = false
+
+    /// Bumped on every pause/resume. Because the "is playing?" query is async, a
+    /// resume can arrive before a pause's callback fires (very short recording);
+    /// the callback checks this token and no-ops if superseded, so we never send a
+    /// pause with no matching resume (which would leave media stuck paused).
+    private var cycle = 0
 
     private static let kMRPlay: UInt32 = 0
     private static let kMRPause: UInt32 = 1
@@ -50,32 +57,38 @@ final class MediaPlaybackController {
     }
 
     /// Pause playback, but only if something is actually playing right now — so we
-    /// don't "wake" idle/paused media on resume. The MediaRemote query is async, so
-    /// the pause lands a few milliseconds after the call (imperceptible in practice).
+    /// don't "wake" idle/paused media on resume. The MediaRemote query is async; all
+    /// state is marshalled onto the main queue and cycle-guarded so a resume arriving
+    /// before this pause resolves can't leave media stuck paused.
     func pauseMedia() {
-        guard let sendCommand = sendCommand else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let sendCommand = self.sendCommand else { return }
+            self.cycle += 1
+            let cycle = self.cycle
 
-        guard let getIsPlaying = getIsPlaying else {
-            // Read API unavailable (framework changed): fall back to the old
-            // always-pause/always-resume behavior so the feature still works.
-            didPauseMedia = sendCommand(Self.kMRPause, nil)
-            return
-        }
-
-        getIsPlaying(DispatchQueue.main) { [weak self] isPlaying in
-            guard let self = self else { return }
-            if isPlaying {
+            guard let getIsPlaying = self.getIsPlaying else {
+                // Read API unavailable (framework changed): fall back to the old
+                // always-pause/always-resume behavior so the feature still works.
                 self.didPauseMedia = sendCommand(Self.kMRPause, nil)
-            } else {
-                self.didPauseMedia = false
+                return
+            }
+
+            getIsPlaying(DispatchQueue.main) { [weak self] isPlaying in
+                guard let self, cycle == self.cycle else { return }  // superseded by a resume
+                self.didPauseMedia = isPlaying ? sendCommand(Self.kMRPause, nil) : false
             }
         }
     }
 
-    /// Sends play, but only if we actually paused something this cycle.
+    /// Sends play, but only if we actually paused something this cycle. Bumps the
+    /// cycle first so an in-flight pause query (not yet resolved) becomes a no-op.
     func resumeMedia() {
-        guard didPauseMedia, let sendCommand = sendCommand else { return }
-        _ = sendCommand(Self.kMRPlay, nil)
-        didPauseMedia = false
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.cycle += 1
+            guard self.didPauseMedia, let sendCommand = self.sendCommand else { return }
+            _ = sendCommand(Self.kMRPlay, nil)
+            self.didPauseMedia = false
+        }
     }
 }

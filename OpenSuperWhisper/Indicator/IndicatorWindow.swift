@@ -230,29 +230,10 @@ class IndicatorViewModel: ObservableObject {
                         try recorder.moveTemporaryRecording(from: tempURL, to: finalURL)
                         hookAudioPath = finalURL.path
 
-                        // Real audio duration from the saved file (the indicator path
-                        // doesn't run a UI timer), plus source context + model used.
-                        let realDuration = await Self.audioDuration(of: finalURL)
-                        let ctx = RecordingContext.shared
-                        let modelUsed = ModelCatalog.activeOption()?.displayName
-
-                        // Save the recording to store
-                        await MainActor.run {
-                            self.recordingStore.addRecording(Recording(
-                                id: recordingId,
-                                timestamp: timestamp,
-                                fileName: fileName,
-                                transcription: text,
-                                duration: realDuration,
-                                status: .completed,
-                                progress: 1.0,
-                                sourceFileURL: nil,
-                                sourceAppName: ctx.appName,
-                                sourceWindowTitle: ctx.windowTitle,
-                                sourceURL: ctx.fullURL,
-                                modelUsed: modelUsed
-                            ))
-                        }
+                        await self.storeRecording(
+                            id: recordingId, timestamp: timestamp, fileName: fileName,
+                            finalURL: finalURL, transcription: text,
+                            status: .completed, progress: 1.0)
                     } else {
                         // Delete the temporary recording immediately
                         try? FileManager.default.removeItem(at: tempURL)
@@ -288,25 +269,10 @@ class IndicatorViewModel: ObservableObject {
                     // and can be re-run with the regenerate (↻) button. Otherwise discard.
                     if AppPreferences.shared.saveTranscriptionHistory,
                        let saved = self.persistFailedRecording(tempURL: tempURL) {
-                        let realDuration = await Self.audioDuration(of: saved.url)
-                        let ctx = RecordingContext.shared
-                        let modelUsed = ModelCatalog.activeOption()?.displayName
-                        await MainActor.run {
-                            self.recordingStore.addRecording(Recording(
-                                id: saved.id,
-                                timestamp: saved.timestamp,
-                                fileName: saved.fileName,
-                                transcription: "Transcription failed — click ↻ to try again.",
-                                duration: realDuration,
-                                status: .failed,
-                                progress: 0,
-                                sourceFileURL: nil,
-                                sourceAppName: ctx.appName,
-                                sourceWindowTitle: ctx.windowTitle,
-                                sourceURL: ctx.fullURL,
-                                modelUsed: modelUsed
-                            ))
-                        }
+                        await self.storeRecording(
+                            id: saved.id, timestamp: saved.timestamp, fileName: saved.fileName,
+                            finalURL: saved.url, transcription: "Transcription failed — click ↻ to try again.",
+                            status: .failed, progress: 0)
                     } else {
                         try? FileManager.default.removeItem(at: tempURL)
                     }
@@ -325,6 +291,32 @@ class IndicatorViewModel: ObservableObject {
                     self.delegate?.didFinishDecoding()
                 }
             }
+        }
+    }
+
+    /// Insert a recording (already at its final URL) into the store with the measured
+    /// audio duration and the captured source context (app / window / URL / model used).
+    /// Shared by the success and failure paths so their metadata wiring can't drift.
+    private func storeRecording(id: UUID, timestamp: Date, fileName: String, finalURL: URL,
+                                transcription: String, status: RecordingStatus, progress: Float) async {
+        let realDuration = await Self.audioDuration(of: finalURL)
+        let ctx = RecordingContext.shared
+        let modelUsed = ModelCatalog.activeOption()?.displayName
+        await MainActor.run {
+            self.recordingStore.addRecording(Recording(
+                id: id,
+                timestamp: timestamp,
+                fileName: fileName,
+                transcription: transcription,
+                duration: realDuration,
+                status: status,
+                progress: progress,
+                sourceFileURL: nil,
+                sourceAppName: ctx.appName,
+                sourceWindowTitle: ctx.windowTitle,
+                sourceURL: ctx.fullURL,
+                modelUsed: modelUsed
+            ))
         }
     }
 

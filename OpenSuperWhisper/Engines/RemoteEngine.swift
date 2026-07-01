@@ -165,11 +165,16 @@ final class RemoteEngine: TranscriptionEngine {
         return URLSession(configuration: config)
     }
 
-    /// Build `<base>/v1/audio/<action>` (action = "transcriptions" | "translations"),
-    /// tolerating a base URL that may or may not already include a trailing slash
-    /// or `/v1` segment.
     private func endpoint(for action: String) -> URL? {
-        var base = serverURL
+        Self.endpoint(base: serverURL, action: action)
+    }
+
+    /// Build `<base>/v1/audio/<action>` (action = "transcriptions" | "translations"),
+    /// tolerating a base URL that may or may not already include a scheme, a
+    /// trailing slash, or an existing `/v1` segment. Pure (no instance state) so
+    /// the normalization is unit-testable.
+    static func endpoint(base: String, action: String) -> URL? {
+        var base = base
         // Default to http:// when no scheme is given (LAN servers like
         // speaches/LiteLLM are commonly plain HTTP); leave explicit https alone.
         let lower = base.lowercased()
@@ -265,7 +270,7 @@ final class RemoteEngine: TranscriptionEngine {
     }
 
     /// OpenAI returns `{"text": "..."}`; tolerate a bare string or `result` key.
-    private static func extractText(from data: Data) -> String {
+    static func extractText(from data: Data) -> String {
         if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
             if let text = json["text"] as? String { return text }
             if let text = json["result"] as? String { return text }
@@ -275,7 +280,7 @@ final class RemoteEngine: TranscriptionEngine {
 
     /// Pull a human-readable message from an error body — OpenAI-style
     /// `{"error": {"message": "…"}}` or `{"error": "…"}`, else the raw text.
-    private static func serverMessage(from data: Data) -> String? {
+    static func serverMessage(from data: Data) -> String? {
         if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
             if let err = json["error"] as? [String: Any], let msg = err["message"] as? String { return msg }
             if let err = json["error"] as? String { return err }

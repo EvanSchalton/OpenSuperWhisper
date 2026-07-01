@@ -280,7 +280,7 @@ struct AppContextRuleRow: Identifiable {
         }
     }
 
-    private static func parse(_ key: String) -> (bundleID: String, host: String?) {
+    static func parse(_ key: String) -> (bundleID: String, host: String?) {
         if let pipe = key.firstIndex(of: "|") {
             return (String(key[..<pipe]), String(key[key.index(after: pipe)...]))
         }
