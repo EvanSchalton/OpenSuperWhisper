@@ -221,20 +221,24 @@ final class RemoteEngine: TranscriptionEngine {
 
     // MARK: - Retry policy
 
+    // The retry-policy helpers below are `internal` (not `private`) so the unit
+    // tests can exercise the classification directly, matching the fork's pattern
+    // of testing pure helpers via `@testable import`.
+
     /// Total attempts (1 initial + 2 retries) for a transcription request.
-    private static let maxAttempts = 3
+    static let maxAttempts = 3
 
     /// Backoff before the next attempt: ~0.5s after the first failure, ~1.5s after
     /// the second — long enough to clear a brief reverse-proxy reload, short enough
     /// not to feel stuck.
-    private static func backoffNanos(afterAttempt attempt: Int) -> UInt64 {
+    static func backoffNanos(afterAttempt attempt: Int) -> UInt64 {
         attempt <= 1 ? 500_000_000 : 1_500_000_000
     }
 
     /// Retry a non-2xx only when it looks like a transient server/infra hiccup, not
     /// a real client error: 5xx, request-timeout/too-many-requests, or the static
     /// "405 Not Allowed" page a reverse proxy (nginx) emits while mid-redeploy.
-    private static func isRetryable(status: Int, body: String) -> Bool {
+    static func isRetryable(status: Int, body: String) -> Bool {
         switch status {
         case 408, 429, 500, 502, 503, 504:
             return true
@@ -249,7 +253,7 @@ final class RemoteEngine: TranscriptionEngine {
 
     /// Retry transient transport errors (timeouts, dropped/again-unavailable
     /// connections), but not e.g. a bad URL or cancellation.
-    private static func isRetryable(_ error: URLError) -> Bool {
+    static func isRetryable(_ error: URLError) -> Bool {
         switch error.code {
         case .timedOut, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed,
              .networkConnectionLost, .notConnectedToInternet, .resourceUnavailable,
