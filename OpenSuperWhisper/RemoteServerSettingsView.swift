@@ -266,19 +266,24 @@ struct RemoteServerSettingsView: View {
                         modelRow(
                             name: info.id,
                             description: info.ownedBy.map { "Provided by \($0)" } ?? "Reported by the server",
-                            selected: !isCustomModel && viewModel.remoteServerModel == info.id
+                            // Green check only when Remote is the ACTIVE engine — one global
+                            // selection, so picking a Whisper/Parakeet model deselects this.
+                            selected: viewModel.selectedEngine == "remote" && !isCustomModel && viewModel.remoteServerModel == info.id
                         ) {
                             viewModel.remoteServerModel = info.id
                             isCustomModel = false
+                            // Selecting a remote model activates the Remote engine (browse ≠ select).
+                            viewModel.selectedEngine = "remote"
                         }
                     }
 
                     modelRow(
                         name: "Custom",
                         description: "Don't see your model? Select here and enter it below.",
-                        selected: isCustomModel
+                        selected: viewModel.selectedEngine == "remote" && isCustomModel
                     ) {
                         isCustomModel = true
+                        viewModel.selectedEngine = "remote"
                     }
                 }
             }

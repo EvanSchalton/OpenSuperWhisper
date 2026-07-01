@@ -2709,12 +2709,10 @@ struct FluidAudioModelDownloadItemView: View {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundColor(.green)
                         .imageScale(.large)
-                } else if isSelected {
-                    // Chosen for this engine, but the engine isn't the active one.
-                    Image(systemName: "checkmark.circle")
-                        .foregroundColor(.secondary)
-                        .imageScale(.large)
                 } else {
+                    // Not the active model → offer Select. One global selection, so a
+                    // non-active model shows no "remembered" checkmark (selecting here
+                    // activates Parakeet and deselects other engines).
                     Button(action: {
                         viewModel.fluidAudioModelVersion = model.version
                     }) {
@@ -2744,7 +2742,7 @@ struct FluidAudioModelDownloadItemView: View {
             }
         }
         .padding(12)
-        .background(isSelected ? Color(.controlBackgroundColor).opacity(0.7) : Color(.controlBackgroundColor).opacity(0.5))
+        .background(isActive ? Color(.controlBackgroundColor).opacity(0.7) : Color(.controlBackgroundColor).opacity(0.5))
         .cornerRadius(8)
         .contentShape(Rectangle())
         .onTapGesture {
@@ -2826,12 +2824,10 @@ struct ModelDownloadItemView: View {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundColor(.green)
                         .imageScale(.large)
-                } else if isSelected {
-                    // Chosen for Whisper, but Whisper isn't the active engine.
-                    Image(systemName: "checkmark.circle")
-                        .foregroundColor(.secondary)
-                        .imageScale(.large)
                 } else {
+                    // Not the active model → offer Select. The app has one global
+                    // selection, so a non-active model shows no "remembered" checkmark
+                    // (selecting here activates Whisper and deselects other engines).
                     Button(action: {
                         let modelPath = WhisperModelManager.shared.modelsDirectory.appendingPathComponent(model.filename).path
                         viewModel.selectModel(URL(fileURLWithPath: modelPath))
@@ -2862,7 +2858,7 @@ struct ModelDownloadItemView: View {
             }
         }
         .padding(12)
-        .background(isSelected ? Color(.controlBackgroundColor).opacity(0.7) : Color(.controlBackgroundColor).opacity(0.5))
+        .background(isActive ? Color(.controlBackgroundColor).opacity(0.7) : Color(.controlBackgroundColor).opacity(0.5))
         .cornerRadius(8)
         .contentShape(Rectangle())
         .onTapGesture {

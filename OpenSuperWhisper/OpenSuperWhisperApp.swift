@@ -209,7 +209,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, ObservableOb
     private func updateStatusBarMenu() {
         let menu = NSMenu()
         
-        menu.addItem(NSMenuItem(title: "OpenSuperWhisper", action: #selector(openApp), keyEquivalent: "o"))
+        let openItem = NSMenuItem(title: "Open Window", action: #selector(openApp), keyEquivalent: "o")
+        openItem.target = self   // without a target macOS disables the item (it did nothing)
+        menu.addItem(openItem)
 
         let transcriptionLanguageItem = NSMenuItem(title: NSLocalizedString("Language", comment: ""), action: nil, keyEquivalent: "")
         languageSubmenu = NSMenu()
@@ -549,6 +551,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, ObservableOb
 }
 
 extension AppDelegate: NSWindowDelegate {
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        // Keep the main window alive — just hide it — instead of letting SwiftUI destroy
+        // it on close. A destroyed WindowGroup window can't be reliably re-created from
+        // within the app on macOS 26, which left the menu-bar "Open Window"/"Settings"
+        // items doing nothing. Hidden, it stays in the windows list so showMainWindow()
+        // can always bring it back. (Settings is a separate scene — let it close.)
+        guard sender.title != "Settings" else { return true }
+        sender.orderOut(nil)
+        NSApplication.shared.setActivationPolicy(.accessory)
+        return false
+    }
+
     func windowWillClose(_ notification: Notification) {
         NSApplication.shared.setActivationPolicy(.accessory)
     }
