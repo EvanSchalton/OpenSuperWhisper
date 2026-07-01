@@ -97,10 +97,12 @@ class TranscriptionService: ObservableObject {
 
     /// Invalidate the active engine so the next transcription re-initializes it
     /// (used when the engine selection or model changes). Intentionally does NOT
-    /// load or download anything — that's deferred to next use.
+    /// load or download anything — that's deferred to next use. Clears any stale
+    /// load error, since the invalidated engine gets a fresh attempt next time.
     func reloadEngine() {
         currentEngine = nil
         loadedEngineKind = nil
+        engineError = nil
     }
     
     func reloadModel(with path: String) {
