@@ -496,8 +496,20 @@ extension View {
     func pointerCursorOnHover() -> some View { modifier(PointerCursorModifier()) }
 }
 
+/// Reports the indicator bubble's laid-out size (before the entrance render transforms) so the
+/// window manager can size the panel itself — see the note on `.onPreferenceChange` below.
+private struct IndicatorContentSizeKey: PreferenceKey {
+    static let defaultValue: CGSize = .zero
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
+        value = nextValue()
+    }
+}
+
 struct IndicatorWindow: View {
     @ObservedObject var viewModel: IndicatorViewModel
+    /// Called whenever the bubble's intrinsic size changes. The manager resizes the hosting
+    /// window to match, *non-animated* (see `.onPreferenceChange` below for why).
+    var onContentResize: (CGSize) -> Void = { _ in }
     @ObservedObject private var streaming = StreamingTranscriptionController.shared
     @ObservedObject private var notch = NotchTuning.shared
     @Environment(\.colorScheme) private var colorScheme
@@ -672,16 +684,6 @@ struct IndicatorWindow: View {
         // surrounding frame). Notch content is centred; the others stay leading.
         .frame(minHeight: isNotchMode ? notch.height : 36)
         .frame(width: bubbleWidth, alignment: isNotchMode ? .center : .leading)
-        // Hard guard against the macOS 26 recursion crash: force the bubble's *size* to settle in
-        // a single, non-animated layout pass even when an ancestor animation is in flight (the
-        // entrance spring below, or any future implicit animation). 362612a removed the explicit
-        // size animations, but the implicit `.animation(value: isVisible)` at the root still
-        // governs this subtree, so a size change coinciding with that transaction drives an
-        // animated window resize (NSHostingView.updateAnimatedWindowSize) that re-enters layout
-        // synchronously and recurses until the main-thread stack overflows. Disabling animations
-        // for this (size-determining) layer breaks that coupling; the render transforms applied
-        // afterwards still animate, so the entrance is unaffected.
-        .transaction { $0.disablesAnimations = true }
         .background {
             if isNotchMode {
                 rect
@@ -698,21 +700,29 @@ struct IndicatorWindow: View {
             }
         }
         .clipShape(rect)
+        // Measure the bubble here, *before* the entrance transforms below, so the reported size is
+        // the real layout size (scaleEffect/offset are render-only and don't affect this).
+        .background(
+            GeometryReader { proxy in
+                Color.clear.preference(key: IndicatorContentSizeKey.self, value: proxy.size)
+            }
+        )
         .environment(\.colorScheme, isNotchMode ? .dark : colorScheme)
         // Notch drops in from the top edge; the others rise from below.
         .scaleEffect(viewModel.isVisible ? 1 : (isNotchMode ? 0.85 : 0.5), anchor: isNotchMode ? .top : .center)
         .offset(y: viewModel.isVisible ? 0 : (isNotchMode ? -20 : 20))
         .opacity(viewModel.isVisible ? 1 : 0)
-        // Entrance only: scale/offset/opacity are render transforms that don't change the
-        // view's layout size, so they're safe to animate.
         .animation(.spring(response: 0.35, dampingFraction: 0.72), value: viewModel.isVisible)
-        // NOTE: Do NOT add implicit animations on values that change the bubble's *size*
-        // (bubbleWidth, the streaming caption text, height, etc.). This window is hosted with
-        // `sizingOptions = .preferredContentSize`, so it resizes to fit this content. Animating
-        // the size makes SwiftUI drive an animated window resize (NSHostingView
-        // .updateAnimatedWindowSize), which on macOS 26 re-enters layout synchronously and
-        // recurses until the main-thread stack overflows (crash: "Thread stack size exceeded
-        // due to excessive recursion"). Let size changes snap in a single layout pass instead.
+        // The hosting window is sized by the manager from this preference (NOT by SwiftUI's
+        // `.preferredContentSize` auto-resize). That auto-resize runs *animated* whenever any
+        // SwiftUI animation transaction is active during a layout pass (NSHostingView
+        // .updateAnimatedWindowSize), and on macOS 26 the animated resize re-enters layout and
+        // recurses until the main-thread stack overflows — the crash in #11/#15/#19. Driving the
+        // size ourselves, non-animated, makes that recursion impossible, so the entrance spring
+        // and the blinking dot above are free to animate without risk.
+        .onPreferenceChange(IndicatorContentSizeKey.self) { size in
+            onContentResize(size)
+        }
         .onAppear {
             viewModel.isVisible = true
         }
