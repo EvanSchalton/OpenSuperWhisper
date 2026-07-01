@@ -16,32 +16,23 @@ class SettingsViewModel: ObservableObject {
     @Published var selectedEngine: String {
         didSet {
             guard !isSyncing else { return }
-            AppPreferences.shared.selectedEngine = selectedEngine
+            // The active selection is owned by ModelSelectionStore (see the select* methods,
+            // which persist + reload the engine). This observer only refreshes the model list
+            // shown for whatever engine is now displayed.
             if selectedEngine == "whisper" {
                 loadAvailableModels()
             } else {
                 initializeFluidAudioModels()
             }
             clampLanguageToSupported()
-            Task { @MainActor in
-                TranscriptionService.shared.reloadEngine()
-            }
         }
     }
     
     @Published var fluidAudioModelVersion: String {
         didSet {
             guard !isSyncing else { return }
-            AppPreferences.shared.fluidAudioModelVersion = fluidAudioModelVersion
-            // Clicking a Parakeet model activates the Parakeet engine (browse ≠ select).
-            if selectedEngine != "fluidaudio" {
-                selectedEngine = "fluidaudio"
-            } else {
-                clampLanguageToSupported()
-                Task { @MainActor in
-                    TranscriptionService.shared.reloadEngine()
-                }
-            }
+            // Selection (engine switch + persistence + reload) is applied via selectParakeet(_:);
+            // this observer only refreshes the row download states.
             initializeFluidAudioModels()
         }
     }
@@ -69,6 +60,11 @@ class SettingsViewModel: ObservableObject {
             guard !isSyncing else { return }
             AppPreferences.shared.remoteServerModel = remoteServerModel
             reloadRemoteEngineIfSelected()
+            // Editing the model string while Remote is the active engine changes the active
+            // selection — keep the store's mirror current (selectRemote covers the click path).
+            if selectedEngine == "remote" {
+                MainActor.assumeIsolated { ModelSelectionStore.shared.refresh() }
+            }
         }
     }
 
@@ -111,17 +107,44 @@ class SettingsViewModel: ObservableObject {
         }
     }
 
-    /// User-initiated model selection. Persists the model and, when the model declares a
-    /// preferred language (e.g. the ivrit.ai Hebrew model), switches to it. Use this for
-    /// explicit user actions only — not from init/restore — so we never override the language
-    /// on a routine reload.
+    /// User-initiated model selections. Each routes through the single mutation point —
+    /// `ModelSelectionStore.select` — so the menu bar, Settings, and the context rules all change
+    /// the active model the same way and can't drift. The store persists to AppPreferences,
+    /// reloads the engine, and posts `.modelSelectionDidChange`, which syncs our @Published copies
+    /// back (`syncModelSelectionFromPreferences`). Call these for explicit user actions only —
+    /// never from init/restore — so a routine reload can't override the language.
     func selectModel(_ url: URL) {
-        selectedModelURL = url
-        // Clicking a Whisper model is what activates the Whisper engine (browse ≠ select).
-        if selectedEngine != "whisper" { selectedEngine = "whisper" }
+        MainActor.assumeIsolated {
+            ModelSelectionStore.shared.select(DictationModelOption(
+                engine: "whisper",
+                identifier: url.path,
+                displayName: url.deletingPathExtension().lastPathComponent))
+        }
+        // A model may declare a preferred language (e.g. the ivrit.ai Hebrew model) — switch to it.
         if let lang = SettingsDownloadableModels.preferredLanguage(forFilename: url.lastPathComponent),
            selectedLanguage != lang {
             selectedLanguage = lang
+        }
+    }
+
+    func selectParakeet(_ version: String) {
+        MainActor.assumeIsolated {
+            ModelSelectionStore.shared.select(DictationModelOption(
+                engine: "fluidaudio", identifier: version, displayName: version))
+        }
+    }
+
+    func selectRemote(_ id: String) {
+        MainActor.assumeIsolated {
+            ModelSelectionStore.shared.select(DictationModelOption(
+                engine: "remote", identifier: id, displayName: id))
+        }
+    }
+
+    func selectSenseVoice() {
+        MainActor.assumeIsolated {
+            ModelSelectionStore.shared.select(DictationModelOption(
+                engine: "sensevoice", identifier: "default", displayName: "SenseVoice"))
         }
     }
 
@@ -780,14 +803,12 @@ class SettingsViewModel: ObservableObject {
                         downloadableFluidAudioModels[index].isDownloaded = true
                         downloadableFluidAudioModels[index].downloadProgress = 1.0
                     }
-                    fluidAudioModelVersion = model.version
+                    // Just-downloaded model becomes the active selection (persists + reloads
+                    // the engine through the single mutation point).
+                    selectParakeet(model.version)
                     isDownloading = false
                     downloadingModelName = nil
                     downloadProgress = 1.0
-                    
-                    Task { @MainActor in
-                        TranscriptionService.shared.reloadEngine()
-                    }
                 }
             } catch is CancellationError {
                 wasCancelled = true
@@ -1554,6 +1575,13 @@ struct SettingsView: View {
                             }
                             if !viewModel.canTranslate {
                                 Text("Only Whisper and remote servers translate; the current engine ignores this.")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            } else if viewModel.translateToEnglish && viewModel.selectedEngine == "remote" {
+                                // We forward to the server's /audio/translations endpoint, but there's
+                                // no capability signal per remote model — so we can't verify the server
+                                // actually translates. Say so instead of failing silently server-side.
+                                Text("Sent to the server's translations endpoint — we can't confirm this remote model supports translation.")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
@@ -2761,7 +2789,7 @@ struct FluidAudioModelDownloadItemView: View {
                     // non-active model shows no "remembered" checkmark (selecting here
                     // activates Parakeet and deselects other engines).
                     Button(action: {
-                        viewModel.fluidAudioModelVersion = model.version
+                        viewModel.selectParakeet(model.version)
                     }) {
                         Text("Select")
                     }
@@ -2796,7 +2824,7 @@ struct FluidAudioModelDownloadItemView: View {
             // Activate on tap whenever this isn't already the *active* model — even if it's the
             // selected version but Parakeet isn't the active engine (browse ≠ select).
             if model.isDownloaded && !isActive {
-                viewModel.fluidAudioModelVersion = model.version
+                viewModel.selectParakeet(model.version)
             }
         }
         .alert("Download Error", isPresented: $showError) {

@@ -270,10 +270,9 @@ struct RemoteServerSettingsView: View {
                             // selection, so picking a Whisper/Parakeet model deselects this.
                             selected: viewModel.selectedEngine == "remote" && !isCustomModel && viewModel.remoteServerModel == info.id
                         ) {
-                            viewModel.remoteServerModel = info.id
                             isCustomModel = false
                             // Selecting a remote model activates the Remote engine (browse ≠ select).
-                            viewModel.selectedEngine = "remote"
+                            viewModel.selectRemote(info.id)
                         }
                     }
 
@@ -283,7 +282,8 @@ struct RemoteServerSettingsView: View {
                         selected: viewModel.selectedEngine == "remote" && isCustomModel
                     ) {
                         isCustomModel = true
-                        viewModel.selectedEngine = "remote"
+                        // Activate Remote with whatever's in the custom field (may be edited below).
+                        viewModel.selectRemote(viewModel.remoteServerModel)
                     }
                 }
             }
