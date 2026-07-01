@@ -2519,7 +2519,7 @@ struct SettingsView: View {
                         SettingRow(
                             title: "Pause media during recording",
                             caption: "Pause other apps' playback while recording, then resume.",
-                            info: "Pauses the system's active player while recording, then resumes it — but only if it was actually playing, so idle or already-paused media is left alone. Acts on the system's active player, so it can't independently restore several sources playing at once."
+                            info: "Pauses the system's active player while recording, then resumes what was playing. If the app can't detect what was playing (unsigned builds), it leaves playback paused — press play to resume. Acts on the system's active player, so it can't independently restore several sources at once."
                         ) {
                             Toggle("", isOn: $viewModel.pauseMediaOnRecord)
                                 .toggleStyle(SwitchToggleStyle(tint: Color.accentColor))
