@@ -136,7 +136,7 @@ class ContentViewModel: ObservableObject {
         startFreshLoad(query: query)
     }
     
-    func handleProgressUpdate(id: UUID, transcription: String?, progress: Float, status: RecordingStatus, isRegeneration: Bool?, modelUsed: String? = nil) {
+    func handleProgressUpdate(id: UUID, transcription: String?, progress: Float, status: RecordingStatus, isRegeneration: Bool?, modelUsed: String? = nil, wasFallback: Bool? = nil) {
         if let index = recordings.firstIndex(where: { $0.id == id }) {
             if let transcription = transcription {
                 recordings[index].transcription = transcription
@@ -148,6 +148,9 @@ class ContentViewModel: ObservableObject {
             }
             if let modelUsed {
                 recordings[index].modelUsed = modelUsed
+            }
+            if let wasFallback {
+                recordings[index].wasFallback = wasFallback
             }
         }
     }
@@ -242,12 +245,16 @@ class ContentViewModel: ObservableObject {
                         // Move the temporary recording to final location
                         try recorder.moveTemporaryRecording(from: tempURL, to: finalURL)
 
-                        // Source context captured at record-start, and the model used.
+                        // Source context captured at record-start.
                         let ctx = RecordingContext.shared
-                        let modelUsed = ModelCatalog.activeOption()?.displayName
 
                         // Save the recording to store
                         await MainActor.run {
+                            // The model that actually produced the text (the local fallback,
+                            // not the configured remote model, when the server was unreachable).
+                            let modelUsed = TranscriptionService.shared.lastUsedModel?.displayName
+                                ?? ModelCatalog.activeOption()?.displayName
+                            let wasFallback = TranscriptionService.shared.lastUsedFallback
                             let newRecording = Recording(
                                 id: recordingId,
                                 timestamp: timestamp,
@@ -260,7 +267,8 @@ class ContentViewModel: ObservableObject {
                                 sourceAppName: ctx.appName,
                                 sourceWindowTitle: ctx.windowTitle,
                                 sourceURL: ctx.fullURL,
-                                modelUsed: modelUsed
+                                modelUsed: modelUsed,
+                                wasFallback: wasFallback
                             )
                             self.recordingStore.addRecording(newRecording)
 
@@ -694,6 +702,7 @@ struct ContentView: View {
             let transcription = userInfo["transcription"] as? String
             let isRegeneration = userInfo["isRegeneration"] as? Bool
             let modelUsed = userInfo["modelUsed"] as? String
+            let wasFallback = userInfo["wasFallback"] as? Bool
 
             viewModel.handleProgressUpdate(
                 id: id,
@@ -701,7 +710,8 @@ struct ContentView: View {
                 progress: progress,
                 status: status,
                 isRegeneration: isRegeneration,
-                modelUsed: modelUsed
+                modelUsed: modelUsed,
+                wasFallback: wasFallback
             )
         }
         .onReceive(NotificationCenter.default.publisher(for: RecordingStore.recordingsDidUpdateNotification)) { _ in
@@ -1002,6 +1012,13 @@ struct RecordingRow: View {
                                         .lineLimit(1)
                                         .truncationMode(.tail)
                                 }
+                                // Orange only when this transcription came from the remote
+                                // engine's local fallback (server was unreachable), so a
+                                // surprising result is easy to spot back in the history.
+                                .foregroundColor(recording.wasFallback ? .orange : .secondary)
+                                .help(recording.wasFallback
+                                      ? "Local fallback — the remote server was unreachable"
+                                      : "")
                             }
                         }
                         .font(.caption2)

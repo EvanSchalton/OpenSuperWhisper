@@ -14,16 +14,15 @@ protocol TranscriptionEngine: AnyObject {
 /// Static engine capabilities keyed by the stored engine id (`AppPreferences.selectedEngine`),
 /// so the UI can gate features without instantiating an engine.
 enum EngineCapabilities {
-    /// Translation to English works on Whisper (any model) and on the remote engine, which
-    /// forwards translation to the server's OpenAI-standard `/audio/translations` endpoint (the
-    /// server decides whether its model supports it). Parakeet/SenseVoice silently ignore the
-    /// `translateToEnglish` flag, so the toggle is disabled for them (#124).
+    /// Engines that can translate to English — the single source of truth for the
+    /// translate toggle's gating AND the local-fallback picker. Add a provider here,
+    /// never a new `case` elsewhere. Whisper translates locally; the remote engine
+    /// forwards translation to the server's OpenAI `/audio/translations` endpoint.
+    /// Parakeet (fluidaudio) / SenseVoice silently ignore `translateToEnglish` (#124).
+    static let translationCapableEngines: Set<String> = ["whisper", "remote"]
+
     static func supportsTranslation(engine: String) -> Bool {
-        switch engine {
-        case "whisper": return true
-        case "remote": return true
-        default: return false
-        }
+        translationCapableEngines.contains(engine)
     }
 
     /// The language codes an engine+model can transcribe, in display order. The single source of

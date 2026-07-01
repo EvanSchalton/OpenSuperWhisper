@@ -26,12 +26,15 @@ struct Recording: Identifiable, Codable, FetchableRecord, PersistableRecord, Equ
     var sourceURL: String? = nil
     /// Display name of the model used for this transcription (e.g. "whisper-large-v3").
     var modelUsed: String? = nil
+    /// True when this transcription came from the remote engine's local fallback (the
+    /// server was unreachable). The history row tints the model label to flag it.
+    var wasFallback: Bool = false
 
     var isRegeneration: Bool = false
 
     enum CodingKeys: String, CodingKey {
         case id, timestamp, fileName, transcription, duration, status, progress, sourceFileURL
-        case sourceAppName, sourceWindowTitle, sourceURL, modelUsed
+        case sourceAppName, sourceWindowTitle, sourceURL, modelUsed, wasFallback
     }
 
     static func == (lhs: Recording, rhs: Recording) -> Bool {
@@ -78,6 +81,7 @@ struct Recording: Identifiable, Codable, FetchableRecord, PersistableRecord, Equ
         static let sourceWindowTitle = Column(CodingKeys.sourceWindowTitle)
         static let sourceURL = Column(CodingKeys.sourceURL)
         static let modelUsed = Column(CodingKeys.modelUsed)
+        static let wasFallback = Column(CodingKeys.wasFallback)
     }
 }
 
@@ -160,6 +164,15 @@ class RecordingStore: ObservableObject {
             if !columnNames.contains("modelUsed") {
                 try db.alter(table: Recording.databaseTableName) { t in
                     t.add(column: "modelUsed", .text)
+                }
+            }
+        }
+
+        migrator.registerMigration("v5_add_was_fallback") { db in
+            let columnNames = try db.columns(in: Recording.databaseTableName).map { $0.name }
+            if !columnNames.contains("wasFallback") {
+                try db.alter(table: Recording.databaseTableName) { t in
+                    t.add(column: "wasFallback", .boolean).notNull().defaults(to: false)
                 }
             }
         }
@@ -273,7 +286,7 @@ class RecordingStore: ObservableObject {
     
     static let recordingProgressDidUpdateNotification = Notification.Name("RecordingStore.recordingProgressDidUpdate")
     
-    func updateRecordingProgressOnlySync(_ id: UUID, transcription: String, progress: Float, status: RecordingStatus, isRegeneration: Bool? = nil, modelUsed: String? = nil) async {
+    func updateRecordingProgressOnlySync(_ id: UUID, transcription: String, progress: Float, status: RecordingStatus, isRegeneration: Bool? = nil, modelUsed: String? = nil, wasFallback: Bool? = nil) async {
         do {
             _ = try await dbQueue.write { db -> Int in
                 var assignments = [
@@ -283,6 +296,9 @@ class RecordingStore: ObservableObject {
                 ]
                 if let modelUsed {
                     assignments.append(Recording.Columns.modelUsed.set(to: modelUsed))
+                }
+                if let wasFallback {
+                    assignments.append(Recording.Columns.wasFallback.set(to: wasFallback))
                 }
                 return try Recording
                     .filter(Recording.Columns.id == id)
@@ -299,6 +315,9 @@ class RecordingStore: ObservableObject {
                 if let modelUsed {
                     updated.modelUsed = modelUsed
                 }
+                if let wasFallback {
+                    updated.wasFallback = wasFallback
+                }
                 recordings[index] = updated
             }
 
@@ -313,6 +332,9 @@ class RecordingStore: ObservableObject {
             }
             if let modelUsed {
                 userInfo["modelUsed"] = modelUsed
+            }
+            if let wasFallback {
+                userInfo["wasFallback"] = wasFallback
             }
 
             await MainActor.run {

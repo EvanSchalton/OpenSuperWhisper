@@ -15,6 +15,7 @@ struct RemoteServerSettingsView: View {
     // focus once configured. Server opens by default only when nothing is set yet.
     @State private var serverExpanded: Bool = AppPreferences.shared.remoteServerURL.isEmpty
     @State private var timeoutExpanded: Bool = false
+    @State private var fallbackExpanded: Bool = false
     @State private var showKeyEditor = false
     @State private var autoTestTask: Task<Void, Never>?
 
@@ -84,6 +85,10 @@ struct RemoteServerSettingsView: View {
                 timeoutBody
                     .padding(.top, 6)
             }
+
+            DisclosureGroup("Local fallback", isExpanded: $fallbackExpanded) {
+                fallbackBody
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 8)
@@ -131,6 +136,63 @@ struct RemoteServerSettingsView: View {
         }
         .padding()
         .frame(width: 320)
+    }
+
+    /// Downloaded on-device models eligible as a fallback. When "Translate to English"
+    /// is on, only translation-capable engines qualify (see EngineCapabilities) — Parakeet
+    /// and SenseVoice can't translate, so they're filtered out.
+    private var localFallbackModels: [DictationModelOption] {
+        let all = ModelCatalog.whisperModels() + ModelCatalog.parakeetModels() + ModelCatalog.senseVoiceModels()
+        guard viewModel.translateToEnglish else { return all }
+        return all.filter { EngineCapabilities.translationCapableEngines.contains($0.engine) }
+    }
+
+    /// Inner content of the "Local fallback" disclosure: use a downloaded on-device model
+    /// when the remote server is unreachable (e.g. off-network). Off by default.
+    @ViewBuilder private var fallbackBody: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Toggle("Use a local model when the server is unreachable",
+                   isOn: $viewModel.remoteFallbackEnabled)
+                .toggleStyle(.switch)
+
+            if viewModel.remoteFallbackEnabled {
+                let models = localFallbackModels
+                if models.isEmpty {
+                    Text(viewModel.translateToEnglish
+                         ? "Translate to English is on, but no Whisper model is downloaded — only Whisper supports translation. Download one under Engine & Model."
+                         : "No on-device models downloaded. Download a Whisper or Parakeet model under Engine & Model to enable fallback.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    HStack {
+                        Text("Fallback model").foregroundColor(.secondary)
+                        Spacer()
+                        Picker("", selection: $viewModel.remoteFallbackModel) {
+                            Text("Select…").tag(DictationModelOption?.none)
+                            ForEach(models, id: \.self) { model in
+                                Text(model.displayName).tag(DictationModelOption?.some(model))
+                            }
+                        }
+                        .labelsHidden()
+                        .fixedSize()
+                    }
+
+                    if viewModel.translateToEnglish {
+                        Text("Translate to English is on, so only Whisper models are offered — Parakeet and SenseVoice can't translate.")
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Text("Only downloaded on-device models are listed. To add one, use Engine & Model → download.")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .padding(.top, 6)
     }
 
     private var timeoutBody: some View {

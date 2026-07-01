@@ -126,6 +126,25 @@ final class AppPreferences {
         set { contextAwareModelModeRaw = newValue.rawValue }
     }
 
+    // Local fallback for the remote engine: when the server is unreachable, transcribe
+    // with a downloaded on-device model instead. Off by default; the chosen model is a
+    // DictationModelOption stored as JSON (empty until the user picks one).
+    @UserDefault(key: "remoteFallbackEnabled", defaultValue: false)
+    var remoteFallbackEnabled: Bool
+
+    @UserDefault(key: "remoteFallbackModelData", defaultValue: Data())
+    var remoteFallbackModelData: Data
+
+    var remoteFallbackModel: DictationModelOption? {
+        get {
+            guard !remoteFallbackModelData.isEmpty else { return nil }
+            return try? JSONDecoder().decode(DictationModelOption.self, from: remoteFallbackModelData)
+        }
+        set {
+            remoteFallbackModelData = newValue.flatMap { try? JSONEncoder().encode($0) } ?? Data()
+        }
+    }
+
     // Model settings
     var selectedModelPath: String? {
         get {

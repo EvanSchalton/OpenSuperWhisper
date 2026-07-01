@@ -301,7 +301,10 @@ class IndicatorViewModel: ObservableObject {
                                 transcription: String, status: RecordingStatus, progress: Float) async {
         let realDuration = await Self.audioDuration(of: finalURL)
         let ctx = RecordingContext.shared
-        let modelUsed = ModelCatalog.activeOption()?.displayName
+        // The model that actually produced the text (which is the local fallback, not
+        // the configured remote model, when the server was unreachable).
+        let modelUsed = transcriptionService.lastUsedModel?.displayName ?? ModelCatalog.activeOption()?.displayName
+        let wasFallback = transcriptionService.lastUsedFallback
         await MainActor.run {
             self.recordingStore.addRecording(Recording(
                 id: id,
@@ -315,7 +318,8 @@ class IndicatorViewModel: ObservableObject {
                 sourceAppName: ctx.appName,
                 sourceWindowTitle: ctx.windowTitle,
                 sourceURL: ctx.fullURL,
-                modelUsed: modelUsed
+                modelUsed: modelUsed,
+                wasFallback: wasFallback
             ))
         }
     }

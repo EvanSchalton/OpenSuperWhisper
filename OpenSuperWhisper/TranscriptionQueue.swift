@@ -255,9 +255,6 @@ class TranscriptionQueue: ObservableObject {
         // the system default once it finishes — the rerun-side analog of "Just This Time".
         let restoreOverride = applyModelOverride(for: recording.id)
         defer { restoreOverride() }
-        // The model that will actually run this transcription (after any override),
-        // recorded alongside the result.
-        let modelUsed = ModelCatalog.activeOption()?.displayName
 
         currentTranscriptionTask = Task {
             do {
@@ -291,13 +288,20 @@ class TranscriptionQueue: ObservableObject {
                     }
                 }.value
 
+                // The model that actually produced the text — the local fallback, not the
+                // configured/override model, when a remote rerun fell back to local.
+                let (modelUsed, wasFallback) = await MainActor.run {
+                    (TranscriptionService.shared.lastUsedModel?.displayName,
+                     TranscriptionService.shared.lastUsedFallback)
+                }
                 await recordingStore.updateRecordingProgressOnlySync(
                     recording.id,
                     transcription: text,
                     progress: 1.0,
                     status: .completed,
                     isRegeneration: false,
-                    modelUsed: modelUsed
+                    modelUsed: modelUsed,
+                    wasFallback: wasFallback
                 )
 
             } catch {

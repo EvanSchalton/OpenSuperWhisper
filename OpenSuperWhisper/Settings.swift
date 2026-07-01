@@ -252,6 +252,14 @@ class SettingsViewModel: ObservableObject {
         didSet { AppPreferences.shared.showCancelButtonOnIndicator = showCancelButtonOnIndicator }
     }
 
+    @Published var remoteFallbackEnabled: Bool {
+        didSet { AppPreferences.shared.remoteFallbackEnabled = remoteFallbackEnabled }
+    }
+
+    @Published var remoteFallbackModel: DictationModelOption? {
+        didSet { AppPreferences.shared.remoteFallbackModel = remoteFallbackModel }
+    }
+
     @Published var liveTranscriptionEnabled: Bool {
         didSet {
             AppPreferences.shared.liveTranscriptionEnabled = liveTranscriptionEnabled
@@ -498,6 +506,8 @@ class SettingsViewModel: ObservableObject {
         self.indicatorPosition = prefs.indicatorPosition
         self.showStopButtonOnIndicator = prefs.showStopButtonOnIndicator
         self.showCancelButtonOnIndicator = prefs.showCancelButtonOnIndicator
+        self.remoteFallbackEnabled = prefs.remoteFallbackEnabled
+        self.remoteFallbackModel = prefs.remoteFallbackModel
         self.liveTranscriptionEnabled = prefs.liveTranscriptionEnabled
         self.useAsianAutocorrect = prefs.useAsianAutocorrect
         self.modifierOnlyHotkey = ModifierKey(rawValue: prefs.modifierOnlyHotkey) ?? .none
